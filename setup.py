@@ -36,7 +36,7 @@ setup(name='zonarPy',
           'astral',
           'simplekml',
           'requests',
-          'datetime'.
+          'datetime',
           'glob',
           'mayavi',
           'collections',

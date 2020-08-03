@@ -1,0 +1,23 @@
+Metadata-Version: 2.1
+Name: zonarPy
+Version: 0.0.1
+Summary: Read and process Zooglider Zonar data
+Home-page: https://github.com/SvenGastauer/zonarPy
+Author: Sven Gastauer
+Author-email: sgastauer@ucsd.edu
+License: MIT
+Download-URL: https://github.com/user/zonarPy/archive/0.0.1.tar.gz
+Description: # zonarPy
+         Zonar
+        
+Keywords: Zooglider,Zonar,Python,acoustics,oceanography
+Platform: UNKNOWN
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Topic :: Software Development :: Build Tools
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.4
+Classifier: Programming Language :: Python :: 3.5
+Classifier: Programming Language :: Python :: 3.6
+Description-Content-Type: text/markdown

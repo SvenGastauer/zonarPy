@@ -1,0 +1,15 @@
+xarray
+numpy
+pandas
+datetime
+matplotlib
+time
+os
+astral
+simplekml
+requests
+datetime
+glob
+mayavi
+collections
+plotly
