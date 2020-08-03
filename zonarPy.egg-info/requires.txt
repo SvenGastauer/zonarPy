@@ -8,7 +8,6 @@ astral
 simplekml
 requests
 datetime
-glob
 mayavi
 collections
 plotly

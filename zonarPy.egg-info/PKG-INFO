@@ -1,12 +1,12 @@
 Metadata-Version: 2.1
 Name: zonarPy
-Version: 0.0.2
+Version: 0.0.3
 Summary: Read and process Zooglider Zonar data
 Home-page: https://github.com/SvenGastauer/zonarPy
 Author: Sven Gastauer
 Author-email: sgastauer@ucsd.edu
 License: MIT
-Download-URL: https://github.com/user/zonarPy/archive/0.0.2.tar.gz
+Download-URL: https://github.com/user/zonarPy/archive/0.0.3.tar.gz
 Description: # zonarPy
          Zonar
         
