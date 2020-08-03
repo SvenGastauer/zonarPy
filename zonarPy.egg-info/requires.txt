@@ -4,7 +4,6 @@ pandas
 datetime
 matplotlib
 time
-os
 astral
 simplekml
 requests
