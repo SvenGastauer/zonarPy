@@ -13,11 +13,11 @@ import xarray as xr
 import datetime
 from astral import Astral
 
-from reader.help_fun import haversine, compute_c, absorption
-from reader.zonar_reader import Zonar
-from reader.meta_reader import raw2meta_extract
-from reader.read_sat import read_sat
-from reader.zonar2nc import generate_nc
+from help_fun import haversine, compute_c, absorption
+from zonar_reader import Zonar
+from meta_reader import raw2meta_extract
+from read_sat import read_sat
+from zonar2nc import generate_nc
 
 
 def get_paths(mdir, acdir='zonar_flash',raw2dir = 'raw2',satdir = 'in-situ_sat_file'):

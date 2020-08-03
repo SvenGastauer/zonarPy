@@ -13,24 +13,34 @@ this_directory = path.abspath(path.dirname(__file__))
 with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
-setup(name='acousondePy',
-      version='0.15',
-      description='Read and plot Acousonde MT files',
+setup(name='zonarPy',
+      version='0.0.1',
+      description='Read and process Zooglider Zonar data',
       long_description=long_description,
       long_description_content_type='text/markdown',
       author='Sven Gastauer',
-      url='https://github.com/SvenGastauer/acousondePy',
-      download_url = 'https://github.com/user/acousondePy/archive/0.15.tar.gz',
+      url='https://github.com/SvenGastauer/zonarPy',
+      download_url = 'https://github.com/user/zonarPy/archive/0.0.1.tar.gz',
       author_email='sgastauer@ucsd.edu',
       license='MIT',
-      packages=['acousondePy'],
-      keywords = ['Acousonde', 'Python', 'acoustics','oceanography'],
+      packages=['zonarPy'],
+      keywords = ['Zooglider', 'Zonar', 'Python', 'acoustics','oceanography'],
       install_requires=[
-          'scipy',
+          'xarray',
           'numpy',
           'pandas',
           'datetime',
           'matplotlib',
+          'time',
+          'os',
+          'astral',
+          'simplekml',
+          'requests',
+          'datetime'.
+          'glob',
+          'mayavi',
+          'collections',
+          'plotly'
         ],
       classifiers=[
         'Development Status :: 3 - Alpha',      # Chose either "3 - Alpha", "4 - Beta" or "5 - Production/Stable" as the current state of your package
