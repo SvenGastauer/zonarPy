@@ -9,15 +9,15 @@ from netCDF4 import Dataset
 import xarray as xr
 import numpy as np
 import pandas as pd
-import datetime
 import time
 import glob
 import os
 import os.path
 
-from zonar_reader import Zonar
-from meta_reader import raw2meta_extract
-from read_sat import read_sat
+from reader.zonar_reader import Zonar
+from reader.meta_reader import raw2meta_extract
+from reader.read_sat import read_sat
+from reader.help_fun import compute_c, absorption
 
 def read_all_zonar(zdir,start=0,end=0):
 	"""
@@ -56,8 +56,7 @@ def read_all_zonar(zdir,start=0,end=0):
 		start=[];all_raws=[]
 	return start, all_raws
 
-
-def get_cal(filename, all_raws, cal0):
+def get_cal(filename, cal0):
 	"""
 	Converts calibraiton information into xarray for nc inclusion
 
@@ -78,23 +77,27 @@ def get_cal(filename, all_raws, cal0):
 	"""
 	print(time.ctime() + ': Gathering Calibration data...')
 	cal=pd.DataFrame()
-	cal['Frequency'] = all_raws.Frequency.unique()
+	cal['Frequency'] = cal0['Frequency']
 	cal['Gain'] = cal0['Gain']
-	cal['TSGain'] = cal0['TS_Gain']
-	cal['Noise'] = cal0['Noise']
-	cal['CalNoise'] = cal0['CalNoise']
-	cal['SoureLevel'] = cal0['sl']
-	cal['tau'] = cal0['tau'] 
+	cal['gn'] = cal0['gn']
 	cal['beam_deg'] = cal0['beam_deg']
 	cal['beam_rad'] = cal0['beam_rad']
+	cal['tau'] = cal0['tau']
+	cal['blank'] = cal0['blank']
+	cal['dt'] = cal0['dt']
+	cal['tPing'] = cal0['tPing']
+	cal['tScan'] = cal0['tScan']
+	cal['nScan'] = cal0['nScan']
+	cal['tWait'] = cal0['tWait']
+	cal['nBin'] = cal0['nBin'] 
+	cal['TSGain'] = cal0['TS_Gain']
+	cal['CalNoise'] = cal0['CalNoise']
+	cal['SoureLevel'] = cal0['sl']
 	cal['alpha'] = cal0['alpha']
-	cal['alpha_cal'] = cal0['alpha_cal']
-	cal['dt'] = np.tile(all_raws.dt.unique(),2)
-	cal['blank'] = np.tile(all_raws.blank.unique(),2)
-	cal['tPing'] = all_raws.tPing.unique()
-	cal['tScan'] = all_raws.tScan.unique()
-	cal['nScan'] = np.floor(1000 * cal['tScan'] / cal['dt'])
-	cal['gn'] = cal0['gn']
+	cal['c'] = cal0['cspeed']
+	cal['TS_cal'] = cal0['TS_cal']
+	cal['TS0'] = cal0['TS0']
+	cal['Gain_TS'] = cal0['TS_Gain']
 	
 	cal_arr = xr.Dataset(cal)
 
@@ -104,7 +107,7 @@ def get_cal(filename, all_raws, cal0):
 	cal_arr.Gain.attrs['Gain'] = 'dB re 1m-1'
 	cal_arr.Gain.attrs['standard_name'] = 'System_Gain'
 	
-	cal_arr.Gain.attrs['TSGain'] = 'dB re 1m2'
+	cal_arr.Gain.attrs['Gain_TS'] = 'dB re 1m2'
 	cal_arr.Gain.attrs['standard_name'] = 'Calibration_Gain'
 	
 	cal_arr.tau.attrs['units'] = 's'
@@ -116,7 +119,7 @@ def get_cal(filename, all_raws, cal0):
 	cal_arr.beam_rad.attrs['units'] = 'radians'
 	cal_arr.beam_rad.attrs['standard_name'] = '3dB_beamwidth_in_radians'
 	
-	cal_arr.alpha.attrs['standard_name'] = 'attenuation_coefficient'
+	cal_arr.alpha.attrs['standard_name'] = 'attenuation_coefficient_during_calibration'
 	
 	cal_arr.dt.attrs['units'] = 'mirco-seconds'
 	cal_arr.dt.attrs['standard_name'] = 'Period_between_scans'
@@ -171,7 +174,7 @@ def get_env(filename,env):
 								 'time':(('Depth','Dive'),np.array(measuretime))},
 								 coords={'Dive':np.array(tp.columns.get_level_values('Nsurf')),
 				 'Depth': np.array(tp.index)})
-	e_arr['StartTime'] = ('Dive',np.array(tp.columns.get_level_values('Dive_start_time')))
+	#e_arr['StartTime'] = ('Dive',np.array(tp.columns.get_level_values('Dive_start_time')))
 	e_arr.temperature.attrs['standard_name'] = 'Ambient_Water_Temperature'
 	e_arr.temperature.attrs['units'] = 'Degrees_Celsius'
 	e_arr.time.attrs['standard_name'] = 'time_of_measure'
@@ -263,8 +266,6 @@ def get_ac(filename, all_raws, beam):
 
 	"""
 	print(time.ctime() + ': Gathering Acoustic data for beam: ' + str(beam) )
-	all_raws['Sv'] = all_raws['Sv'].astype('float')
-	all_raws['TS'] = all_raws['TS'].astype('float')
 	
 	sub_raws0 = all_raws[(all_raws.beam == beam) & (all_raws.Ping == 0)]
 	sub_raws1 = all_raws[(all_raws.beam == beam) & (all_raws.Ping == 1)]
@@ -278,42 +279,11 @@ def get_ac(filename, all_raws, beam):
 	
 	dz = pd.pivot_table(sub_raws0, values='dz',index = ['nscan'], columns = ['ping_time','nBurst','dive'])
 
-	#ADDING META DATA AND SV, TS
-	sv_temp0 = pd.pivot_table(sub_raws0, values='Sv',index = ['nscan'], columns = ['ping_time','nBurst','dive'])
-	sv_temp1 = pd.pivot_table(sub_raws1, values='Sv',index = ['nscan'], columns = ['ping_time','nBurst','dive'])
-	sv_temp2 = pd.pivot_table(sub_raws2, values='Sv',index = ['nscan'], columns = ['ping_time','nBurst','dive'])
-	sv_temp3 = pd.pivot_table(sub_raws3, values='TS',index = ['nscan'], columns = ['ping_time','nBurst','dive'])
-	ts_temp0 = pd.pivot_table(sub_raws0, values='TS',index = ['nscan'], columns = ['ping_time','nBurst','dive'])
-	ts_temp1 = pd.pivot_table(sub_raws1, values='TS',index = ['nscan'], columns = ['ping_time','nBurst','dive'])
-	ts_temp2 = pd.pivot_table(sub_raws2, values='TS',index = ['nscan'], columns = ['ping_time','nBurst','dive'])
-	ts_temp3 = pd.pivot_table(sub_raws3, values='TS',index = ['nscan'], columns = ['ping_time','nBurst','dive'])
-	
-	alpha = pd.pivot_table(sub_raws0, values='alpha',index = ['nscan'], columns = ['ping_time','nBurst','dive'])
-	
-	c = pd.pivot_table(sub_raws0, values='c',index = ['nscan'], columns = ['ping_time','nBurst','dive'])
-	
-	temp = pd.pivot_table(sub_raws0, values='temperature',index = ['nscan'], columns = ['ping_time','nBurst','dive'])
-	sal = pd.pivot_table(sub_raws0, values='salinity',index = ['nscan'], columns = ['ping_time','nBurst','dive'])
-	fluo = pd.pivot_table(sub_raws0, values='fluorescence',index = ['nscan'], columns = ['ping_time','nBurst','dive'])
-	
 	
 	ac_arr = xr.Dataset(data_vars={'Ping1':(('nScan','Burst'),np.array(ac_temp0)),
 								'Ping2':(('nScan','Burst'),np.array(ac_temp1)),
 								'Ping3':(('nScan','Burst'),np.array(ac_temp2)),
 								'Ping4':(('nScan','Burst'),np.array(ac_temp3)),
-								'Sv1':(('nScan','Burst'),np.array(sv_temp0)),
-								'Sv2':(('nScan','Burst'),np.array(sv_temp1)),
-								'Sv3':(('nScan','Burst'),np.array(sv_temp2)),
-								'Sv4':(('nScan','Burst'),np.array(sv_temp3)),
-								'TS1':(('nScan','Burst'),np.array(ts_temp0)),
-								'TS2':(('nScan','Burst'),np.array(ts_temp1)),
-								'TS3':(('nScan','Burst'),np.array(ts_temp2)),
-								'TS4':(('nScan','Burst'),np.array(ts_temp3)),
-								'Temperature':(('nScan','Burst'),np.array(temp)),
-								'Salinity':(('nScan','Burst'),np.array(sal)),
-								'Fluorescence':(('nScan','Burst'),np.array(fluo)),
-								'alpha':(('nScan','Burst'),np.array(alpha)),
-								'soundspeed':(('nScan','Burst'),np.array(c)),
 								'Range':(('nScan','Burst'),np.array(dz))},
 					 coords = {'nScan':np.array(ac_temp1.index),
 				  'Burst': np.array(ac_temp0.columns.get_level_values('nBurst'))})
@@ -322,14 +292,6 @@ def get_ac(filename, all_raws, beam):
 	
 	
 	#set meta data
-	sv_desc = 'Scattering volume in dB re 1 m-1. Sv is\
-		 computed as Sv = raw_dB - SL - 10log10(c * tau/2) - psi_deg + 20log10(d)\
-			  + 2 alpha * d + G, with G = calibration gain, d the range,\
-				   psi_deg the equivalent beam angle in degrees, tau the pulse\
-					    duration, c the ambient sound speed, SL the estimated\
-							 source leveland raw_dB is the raw daat expressed\
-								  in dB re V'
-								  
 	ac_arr.Ping1.attrs['units'] = '40 counts per dB re V'
 	ac_arr.Ping1.attrs['standard_name'] = 'Raw_acoustic_data'
 	ac_arr.Ping2.attrs['units'] = '40 counts per dB re V'
@@ -338,57 +300,17 @@ def get_ac(filename, all_raws, beam):
 	ac_arr.Ping3.attrs['standard_name'] = 'Raw_acoustic_data'
 	ac_arr.Ping4.attrs['units'] = '40 counts per dB re V'
 	ac_arr.Ping4.attrs['standard_name'] = 'Raw_acoustic_data'
-	ac_arr.Sv1.attrs['units'] = 'dB re m-1'
-	ac_arr.Sv1.attrs['standard_name'] = 'Sv_acoustic_data'
-	ac_arr.Sv1.attrs['description'] = sv_desc
-	ac_arr.Sv2.attrs['units'] = 'dB re m-1'
-	ac_arr.Sv2.attrs['standard_name'] = 'Sv_acoustic_data'
-	ac_arr.Sv2.attrs['description'] = sv_desc
-	ac_arr.Sv3.attrs['units'] = 'dB re m-1'
-	ac_arr.Sv3.attrs['standard_name'] = 'Sv_acoustic_data'
-	ac_arr.Sv3.attrs['description'] = sv_desc
-	ac_arr.Sv4.attrs['units'] = 'dB re m-1'
-	ac_arr.Sv4.attrs['standard_name'] = 'Sv_acoustic_data'
-	ac_arr.Sv4.attrs['description'] = sv_desc
-	ac_arr.TS1.attrs['units'] = 'dB re m2'
-	ac_arr.TS1.attrs['standard_name'] = 'TS_acoustic_data'
-	ac_arr.TS2.attrs['units'] = 'dB re m2'
-	ac_arr.TS2.attrs['standard_name'] = 'TS_acoustic_data'
-	ac_arr.TS3.attrs['units'] = 'dB re m2'
-	ac_arr.TS3.attrs['standard_name'] = 'TS_acoustic_data'
-	ac_arr.TS4.attrs['units'] = 'dB re m2'
-	ac_arr.TS4.attrs['standard_name'] = 'TS_acoustic_data'
 	ac_arr.Time.attrs['standard_name'] = 'Datetime_of_the_burst'
 	ac_arr.Burst.attrs['standard_name'] = 'Burst_number'
 	ac_arr.Range.attrs['standard_name'] = 'Depth'
 	ac_arr.Range.attrs['units'] = 'dBar'
 	ac_arr.nScan.attrs['standard_name'] = 'Sample_number'
 	ac_arr.Burst.attrs['description'] = 'Each burst consists of 4 consequetive pings'
-	ac_arr.Temperature['standard_name'] = 'temperature'
-	ac_arr.Temperature.attrs['units'] = 'degrees Celsius'
-	ac_arr.Temperature.attrs['description'] = 'Ambient temperature, interpolated from recorded CTD information'
-	ac_arr.Salinity['standard_name'] = 'salinity'
-	ac_arr.Salinity.attrs['units'] = 'PSU'
-	ac_arr.Salinity.attrs['description'] = 'Ambient Salinity, interpolated from recorded CTD information'
-	ac_arr.Fluorescence['standard_name'] = 'fluorescence'
-	ac_arr.Fluorescence.attrs['units'] = 'RFU'
-	ac_arr.Fluorescence.attrs['description'] = 'Ambient fluorescence, interpolated from recorded CTD information'
-	ac_arr.alpha['standard_name'] = 'attenuation_coefficient'
-	ac_arr.alpha['units'] = 'coefficient'
-	ac_arr.alpha.attrs['description'] = 'Ambient sound attenuation coefficient,\
-		 calculated based on interpolated CTD information, based on \
-			 Francois & Garrison, J. Acoust. Soc. Am., Vol. 72, No. 6, December 1982'
-	ac_arr.alpha['standard_name'] = 'sound_speed'
-	ac_arr.alpha['units'] = 'm/s'
-	ac_arr.alpha.attrs['description'] = 'Ambient sound speed, calculated based \
-		on interpolated CTD information, following Mackenzie, K. V. (1981). \
-			Nine term equation for sound speed in the oceans. The Journal \
-				of the Acoustical Society of America, 70(3), 807-812.\
-					 http://asa.scitation.org/doi/abs/10.1121/1.386920'
+	
 	ac_arr.to_netcdf(filename, 'a',group='Zonar/' + 'Beam_' + str(beam))
-	
-	return ac_arr
-	
+
+	return(ac_arr)
+	#return ac_arr	
 #get sat file
 def  get_sat(filename,header,gps,engineering,profile, zoocam, zonar, misc):
 	"""
@@ -472,18 +394,23 @@ def  get_sat(filename,header,gps,engineering,profile, zoocam, zonar, misc):
 	print(time.ctime() + ': Writing misc...' )
 	var = [k for k in misc.keys()]
 	var.remove('Shore_comm')
-	nam = ['Dive Info', 'Mission ID','Email message','Engineering','Parameters list','Parameter values' ]
+	nam = ['Dive Info', 'Mission ID','Email message','Engineering',\
+		'Parameters list','Parameter values' ]
 	create_var(misc, var,nam, vnam='Sat/misc')
 	
 	
 #create nc file
-def generate_nc(filename, env, gps, zoog, all_raws, miss, header,gps_sat,engineering,profile, zoocam, zonar, misc, cal):
+def generate_nc(filename, env, gps, zoog, all_raws, miss, header,gps_sat,
+				engineering,profile, zoocam, zonar, misc, cal):
 	print(time.ctime() + ': Preparing Zonar data...')
 	### ZONAR Preparation
 	#get number of pings
-	all_raws['sample_time'] = pd.to_datetime(all_raws['dive_time']).values.astype(np.int64) +  ( all_raws['dt']/1000 * (all_raws['nscan'] + 1) + all_raws['blank'] + all_raws['tau'] * 1000 + all_raws['Ping'] * all_raws['tPing'])/1000 * 10**9
+	all_raws['sample_time'] = pd.to_datetime(all_raws['dive_time']).values.astype(np.int64) +  \
+		( all_raws['dt']/1000 * (all_raws['nscan'] + 1) + all_raws['blank'] + \
+   all_raws['tau'] * 1000 + all_raws['Ping'] * all_raws['tPing'])/1000 * 10**9
 	#all_raws['sample_time'] = pd.to_datetime(all_raws['real_time'])
-	all_raws['ping_time'] = pd.to_datetime(all_raws['dive_time']).values.astype(np.int64) +  (all_raws['Ping'] * all_raws['tPing'])/1000 * 10**9
+	all_raws['ping_time'] = pd.to_datetime(all_raws['dive_time']).values.astype(np.int64) +  \
+		(all_raws['Ping'] * all_raws['tPing'])/1000 * 10**9
 	all_raws['ping_time'] = pd.to_datetime(all_raws['ping_time'])
 	        
 	#pings = all_raws.Ping.unique()
@@ -513,18 +440,32 @@ def generate_nc(filename, env, gps, zoog, all_raws, miss, header,gps_sat,enginee
 	#add zoog
 	get_zoog(filename, zoog)
 	#add cal
-	get_cal(filename, all_raws, cal)
+	get_cal(filename, cal)
 	#add sat
 	get_sat(filename, header,gps,engineering,profile, zoocam, zonar, misc)
 	
 	#add raw acoustics
 	for beam in beams:
-		get_ac(filename, all_raws,beam)
+		_ = get_ac(filename, all_raws,beam)
+		
+		
+
+def get_cal_val(fn, date):
+	caldf = pd.read_table(fn, sep='\t{1,}',comment='#',header=None, \
+					   engine='python')
+	caldf.columns = pd.read_table(fn, sep='\s{2,}',skiprows=7, nrows=1,\
+							   header=None, engine='python').values[0]
+	caldf = caldf.set_index(pd.to_datetime(caldf['#monYr'], format='%b%y'))
+	return caldf.iloc[caldf.index.get_loc(date,method='nearest')]
+
 
 def get_missions(mdir):
 	return [i for i in next(os.walk(mdir))[1] if '20' in i]
-'''
-def missions_to_nc(mdir, missions, outdir='', acdir='zonar_flash',raw2dir = 'raw2',satdir = 'in-situ_sat_file',d_start=0,d_end=0, force=False):
+
+def missions_to_nc(mdir, missions, outdir='', acdir='zonar_flash',
+				   raw2dir = 'raw2',satdir = 'in-situ_sat_file',
+				   d_start=0,d_end=0, TS0=None, Scal=0, Tcal=20, dcal=5, 
+				   Gain = [54,54], calfn=None, force=False):
 	for miss in missions:
 		print(time.ctime() + ': Processing ' + miss )
 		outfn = outdir + miss + '.nc'
@@ -537,33 +478,148 @@ def missions_to_nc(mdir, missions, outdir='', acdir='zonar_flash',raw2dir = 'raw
 			if len(rdir) > 0:
 				raw_dir = mdir + miss + '\\' + rdir [0] 
 			else:
-				print(time.ctime() + ': No RAW DATA FOLDER found for ' + miss + ' ...skipping mission...')
+				print(time.ctime() + ': No RAW DATA FOLDER found for ' + \
+		  miss + ' ...skipping mission...')
+				continue
+			#get satellite data
+			sat_dir = mdir + miss + '\\' + satdir
+			satfn = glob.glob(sat_dir +'\\*.sat')
+			if len(satfn)>0:
+				header, gps_sat,engineering, profile, zoocam, zonar,\
+					 misc = read_sat(satfn[0])
+			else:
+				print(time.ctime() + ': No SAT file found for ' + miss + \
+		  ' ...skipping mission...')
 				continue
 			
 			#get acoustics zonar data
 			ac_dir = raw_dir + '\\' + acdir + '\\'
 			start, all_raws = read_all_zonar(ac_dir,d_start, d_end)
 			if len(all_raws) == 0:
-				print(time.ctime() + ': No ACOUSTIC DIVE DATA found for ' + miss + ' ...skipping mission...')
+				print(time.ctime() + ': No ACOUSTIC DIVE DATA found for ' + \
+		  miss + ' ...skipping mission...')
 				continue
-							
+			#get acoustic calibration data
+			# get the cal information from file if available
+			if calfn is not None:
+				print(time.ctime() + ': Reading acoustic cal values from file...')
+				cv = get_cal_val(calfn, pd.to_datetime(all_raws.start_time.values[0]))
+				NL = cv[cv.index.isin(['N[200]','N[1000]'])].values
+				TS = cv[cv.index.isin(['T[200]','T[1000]'])].values
+				print('NL = ' + str(NL) + ' TS  = ' + str(TS))
+				Spray = cv.Spray
+				znr = cv.Zonar
+				monYr = cv[0]
+			else:
+				ctemp = Zonar().init_cal()
+				NL = ctemp['CalNoise']
+				TS = [87, 82]
+				Spray = header['vehicle']['SN'][0]
+				znr = 'NA'
+				monYr = pd.to_datetime(all_raws.start_time.values[0]).strftime('%b%y')
+				
+			#update calibration values
+			print(time.ctime() + ': Updating calibration data')
+			#TS0 - the theoretical TS of the used sphere
+			if TS0 is None: TS0 = [-53.47, -50.92]
+			if Gain is None: Gain = [54, 54]
+			# get the source level approximation
+			alpha = np.array([absorption(f=f, S=np.array(Scal), 
+								T=np.array(Tcal), D=np.array([dcal]))/1000 \
+					 for f in start['freq']]).flatten()
+			c = compute_c(dcal,Scal,Tcal)
+			
+			
+			cal = Zonar().init_cal(CalNoise = NL,
+						  Gain = Gain,
+						  TS_cal = TS,
+						  TS0 = TS0,
+						  alpha = alpha,
+						  cspeed = c,
+						  Spray = Spray,
+						  Zonar = znr,
+						  monYr = monYr,
+						  tau = start.pulse.values,
+						  blank = start.blank.values,
+						  dt = start.dt.values,
+						  tScan = start.tScan.values,
+						  tPing = start.tPing.values,
+						  nScan = start.nScan.values,
+						  tWait = start.tWait.values,
+						  nBin = start.nBin.values,
+						  gn = start.gn.values,
+						  Frequency = start.freq.values)
+			del cal['Noise']
+			# SL = Source level, 40log10(z) + 2 alpha z = 2 x Transmission 
+			#Loss, G0 = system gain
+			SL = np.array(NL)/cal['gn'] + np.array(cal['Gain']) +\
+				 40 * np.log10(dcal)+ 2 * alpha * dcal 
+			cal['sl'] = SL
+			#get expected TS in counts
+			TS_c = TS0 + SL - 40*np.log10(dcal) - 2 * alpha * dcal
+			#get the TS cal Gain value
+			Gcal = TS_c - np.array(TS) #dB re V
+			cal['TS_Gain'] = Gcal
+				
 			#get physical data
 			raw2_dir = raw_dir + '\\' + raw2dir
 			rawfn = glob.glob(raw2_dir + '\\*.raw2')
 			if len(rawfn) > 0:
 				env, gps, zoog = raw2meta_extract(rawfn[0])
 			else:
-				print(time.ctime() + ': No RAW2 file found for ' + miss + ' ...skipping mission...')
+				print(time.ctime() + ': No RAW2 file found for ' + 
+		  miss + ' ...skipping mission...')
 				continue
 				
-			#get satellite data
-			sat_dir = mdir + miss + '\\' + satdir
-			satfn = glob.glob(sat_dir +'\\*.sat')
-			if len(satfn)>0:
-				header, gps_sat,engineering, profile, zoocam, zonar, misc = read_sat(satfn[0])
-			else:
-				print(time.ctime() + ': No SAT file found for ' + miss + ' ...skipping mission...')
-				continue
 			#generate netCDF file
-			generate_nc(filename=outfn,env=env, gps=gps, zoog=zoog, all_raws=all_raws, miss=miss,header=header,gps_sat=gps_sat,engineering=engineering,profile=profile, zoocam=zoocam, zonar=zonar, misc=misc)
-'''
+			generate_nc(filename=outfn,env=env, gps=gps, zoog=zoog, 
+			   all_raws=all_raws, miss=miss,header=header,gps_sat=gps_sat,
+			   engineering=engineering,profile=profile, zoocam=zoocam, 
+			   zonar=zonar, misc=misc,cal=cal)
+			
+def get_AllRoiCounts(rdir='Z:\\Zooglider_end_to_end_results', pat = '/20*/',
+					 outdir=''):
+	"""
+	Get all the ROI counts from the Zoocam data
+
+	Parameters
+	----------
+	rdir : string, optional
+		Path to the folder containing the Zooglider data. This can be a parent\
+			 folder as the pattern matching will be recursive. The default is \
+				 'Z:\\Zooglider_end_to_end_results'.
+	pat : string, optional
+		Regex Pattern to be matched. The default is '/20*/'.
+	outdir : string, optional
+		Folder to which the csv files should be written. The default is ''.
+
+	Returns
+	-------
+	cdat : TYPE
+		DESCRIPTION.
+
+	"""
+	ldirs = glob.glob(rdir + pat)
+	for ldir in ldirs:
+		miss = os.path.basename(os.path.normpath(ldir))
+		print(time.ctime() + ': Processing ' + miss )
+		cdir = glob.glob(ldir + '/*_converted_to_csv')[0] + '\\Physical_data_at_Interpolated_Depths\\'
+		int_fn = sorted(glob.glob(cdir + '*_interpolated_data.csv'))
+		meas_fn = sorted(glob.glob(cdir + '*_roi_counts.csv'))
+		if len(meas_fn)>0:
+			cdat = pd.DataFrame()
+			for i in range(len(int_fn)):
+				print(time.ctime() + ': ' + str(i+1) + ' of ' + str(len(int_fn)) + ' - ' + str(np.round((i+1)/len(int_fn) * 100)) + '% done')
+				tmp = pd.read_csv(int_fn[i])
+				tmp2 = pd.read_csv(meas_fn[i])
+				tmp2['filename'] = tmp2['Unnamed: 0'].str.split('.png', n=1,expand=True)[0]
+				tmp2.drop(columns=['Unnamed: 0'], inplace=True)
+				cdat = cdat.append(tmp.merge(tmp2))
+				cdat.loc[:,'mission'] = miss
+				outfn = outdir + miss + '.csv.gz'
+			print(time.ctime() + ': Writing ' + outfn)
+			cdat.to_csv(outfn, compression = 'gzip')
+		else:
+			print(time.ctime() + ': No converted_to_csv folder found for ' + ldir) 
+			continue
+	return cdat

@@ -8,7 +8,7 @@ Created on Sat Jan 18 19:53:14 2020
 import requests
 import pandas as pd
 import time
-from read_sat import read_sat
+from .read_sat import read_sat
 import numpy as np
 from astral import Astral
 from datetime import datetime

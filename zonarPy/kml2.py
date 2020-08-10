@@ -12,7 +12,7 @@ import time
 import simplekml
 import xarray as xr
 import pandas as pd
-from get_gps import get_gps
+from .get_gps import get_gps
 import numpy as np
 
 # Data for the track

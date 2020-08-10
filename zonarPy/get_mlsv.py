@@ -15,7 +15,7 @@ Created on Fri Feb  7 08:49:47 2020
 import xarray as xr
 import numpy as np
 import pandas as pd
-from help_fun import haversine, compute_c, absorption
+from .help_fun import haversine, compute_c, absorption
 import matplotlib.pyplot as plt
 import time
 import os

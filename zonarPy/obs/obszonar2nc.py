@@ -14,10 +14,10 @@ import glob
 import os
 import os.path
 
-from .zonar_reader import Zonar
-from .meta_reader import raw2meta_extract
-from .read_sat import read_sat
-from .help_fun import compute_c, absorption
+from zonar_reader import Zonar
+from meta_reader import raw2meta_extract
+from read_sat import read_sat
+from help_fun import compute_c, absorption
 
 def read_all_zonar(zdir,start=0,end=0):
 	"""

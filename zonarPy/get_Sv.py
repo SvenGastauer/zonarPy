@@ -8,7 +8,7 @@ Created on Fri Feb  7 08:49:47 2020
 import xarray as xr
 import numpy as np
 import pandas as pd
-from help_fun import haversine, compute_c, absorption
+from .help_fun import haversine, compute_c, absorption
 import matplotlib.pyplot as plt
 import time
 import os
@@ -296,7 +296,7 @@ def get_Sv(miss,beam=1,ping=1,
 
 	return Sv_out,env,aop
 
-
+'''
 def ncToPiv2D(miss, outdir = None,
 			  f = 0, p = 0, 
 			  v = ['sv'], 
@@ -413,7 +413,7 @@ def ncToPiv2D(miss, outdir = None,
 			'Delta_vres_' + str(r) + 'm_per_dive_rb_' + str(dzmin) + '_' + str(dzmax) + '.csv'
 		SvDelta.to_csv(outdir + fnout)
 	
-
+'''
 def get_active_dives(miss):
 	#get info on active or passive
 	aop = xr.open_dataset(miss, group='Sat/zonar/Zonar_beam').to_dataframe()
